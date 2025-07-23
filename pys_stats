@@ -1,0 +1,162 @@
+function main() {
+  const PRINTFUL_API_KEY = 'e7auzBxPBIwmpo3qh5GtnyNkKTTr7oYHYwDLLEsZ';
+  const STRIPE_API_KEY = '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';
+  const EMAIL_RECIPIENT = 'bills@pensacolayouthsoccer.com';
+
+  // Set dates for previous month
+  const today = new Date();
+  const year = today.getFullYear();
+  const firstOfThisMonth = new Date(year, today.getMonth(), 1);
+  const startDate = new Date(firstOfThisMonth);
+  startDate.setMonth(startDate.getMonth() - 1);
+  const endDate = new Date(firstOfThisMonth);
+  const monthName = startDate.toLocaleString('default', { month: 'long' });
+
+  const isoStart = startDate.toISOString();
+  const isoEnd = endDate.toISOString();
+  console.log(`Fetching data from ${isoStart} to ${isoEnd}`);
+
+  const sheetName = year.toString();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(sheetName);
+    sheet.appendRow([
+      'Month',
+      'Orders',
+      'Printful Cost',
+      'Retail Revenue',
+      'Printful Profit',
+      'Stripe Gross',
+      'Stripe Fees',
+      'Stripe Net',
+      'PYS Profit'
+    ]);
+
+    // Bold + underline header row
+    const header = sheet.getRange('A1:I1');
+    header.setFontWeight('bold');
+    header.setBorder(false, false, true, false, false, false);
+  }
+
+  // ----------- STRIPE -----------
+  const stripeUrl = `https://api.stripe.com/v1/balance_transactions?limit=100`;
+  const stripeResponse = UrlFetchApp.fetch(stripeUrl, {
+    headers: { Authorization: `Bearer ${STRIPE_API_KEY}` },
+    muteHttpExceptions: true
+  });
+
+  const stripeData = JSON.parse(stripeResponse.getContentText()).data;
+  let stripeGross = 0, stripeFees = 0, stripeNet = 0;
+
+  if (stripeData) {
+    for (const txn of stripeData) {
+      const created = new Date(txn.created * 1000);
+      if (created >= startDate && created < endDate && txn.type === 'charge') {
+        stripeGross += txn.amount / 100;
+        stripeFees += txn.fee / 100;
+        stripeNet += txn.net / 100;
+      }
+    }
+  }
+
+  stripeGross = +stripeGross.toFixed(2);
+  stripeFees = +stripeFees.toFixed(2);
+  stripeNet = +stripeNet.toFixed(2);
+
+  // ----------- PRINTFUL -----------
+  const printfulResponse = UrlFetchApp.fetch(
+    `https://api.printful.com/orders?status=fulfilled&limit=100`,
+    {
+      headers: { Authorization: `Bearer ${PRINTFUL_API_KEY}` },
+      muteHttpExceptions: true
+    }
+  );
+
+  const printfulData = JSON.parse(printfulResponse.getContentText());
+  const orders = Array.isArray(printfulData.result) ? printfulData.result : [];
+
+  let orderCount = 0;
+  let printfulCost = 0;
+  let retailRevenue = 0;
+
+  for (const order of orders) {
+    const created = new Date(order.created * 1000);
+    if (created >= startDate && created < endDate) {
+      orderCount++;
+      printfulCost += parseFloat(order.costs.total);
+      if (order.retail_costs && order.retail_costs.total) {
+        retailRevenue += parseFloat(order.retail_costs.total);
+      }
+    }
+  }
+
+  printfulCost = +printfulCost.toFixed(2);
+  retailRevenue = +retailRevenue.toFixed(2);
+  const printfulProfit = +(retailRevenue - printfulCost).toFixed(2);
+  const pysProfit = +(stripeNet - printfulCost).toFixed(2);
+
+  // ----------- INSERT NEW ROW at Row 2 -----------
+  sheet.insertRows(2);
+  sheet.getRange(2, 1, 1, 9).setValues([[
+    `${monthName} ${startDate.getFullYear()}`,
+    orderCount,
+    printfulCost,
+    retailRevenue,
+    printfulProfit,
+    stripeGross,
+    stripeFees,
+    stripeNet,
+    pysProfit
+  ]]);
+
+  // ----------- ADD OR UPDATE TOTALS ROW -----------
+  const lastRow = sheet.getLastRow();
+  const totalRowIndex = lastRow + 1;
+
+  // Remove previous total row if it exists (by checking if A[lastRow] = 'Total')
+  const lastLabel = sheet.getRange(lastRow, 1).getValue();
+  if (lastLabel === 'Total') {
+    sheet.deleteRow(lastRow);
+  }
+
+  const newLastRow = sheet.getLastRow();
+  const totalsRange = sheet.getRange(newLastRow + 1, 1, 1, 9);
+  totalsRange.setValues([[
+    'Total',
+    `=SUM(B2:B${newLastRow})`,
+    `=SUM(C2:C${newLastRow})`,
+    `=SUM(D2:D${newLastRow})`,
+    `=SUM(E2:E${newLastRow})`,
+    `=SUM(F2:F${newLastRow})`,
+    `=SUM(G2:G${newLastRow})`,
+    `=SUM(H2:H${newLastRow})`,
+    `=SUM(I2:I${newLastRow})`
+  ]]);
+  totalsRange.setFontWeight('bold');
+  totalsRange.setBorder(true, null, null, null, null, null);
+
+  // ----------- SEND EMAIL -----------
+  const htmlBody = `
+  <p>🧾 <strong>PYS Monthly Merch Report: ${monthName} ${year}</strong><br>
+  <a href="https://www.pensacolayouthsoccer.com/shop">www.pensacolayouthsoccer.com/shop</a></p>
+
+  <p>🛍 Orders: ${orderCount}<br>
+  💵 Retail Revenue: $${retailRevenue}<br>
+  🧾 Printful Cost: $${printfulCost}<br>
+  📈 Printful Profit: $${printfulProfit}</p>
+
+  <p>💳 Stripe Gross: $${stripeGross}<br>
+  💸 Stripe Fees: $${stripeFees}<br>
+  🏦 Stripe Net: $${stripeNet}</p>
+
+  <p>📊 PYS Net Profit (Stripe Net - Printful Cost): $${pysProfit}</p>
+`;
+
+MailApp.sendEmail({
+  to: EMAIL_RECIPIENT,
+  subject: `PYS Monthly Merch Report – ${monthName} ${year}`,
+  htmlBody
+});
+}
