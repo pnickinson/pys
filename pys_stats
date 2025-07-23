@@ -1,162 +1,325 @@
+// === CONFIGURATION ===
+const PRINTFUL_API_KEY = PropertiesService.getScriptProperties().getProperty('PRINTFUL_API_KEY');
+const STRIPE_API_KEY = PropertiesService.getScriptProperties().getProperty('STRIPE_API_KEY');
+const EMAIL_RECIPIENT = 'phil@nickinson.net';
+
 function main() {
-  const PRINTFUL_API_KEY = 'RCUgY6FK0lkpY1fE09iL88kUGFojYakOOYmWAXBK';
-  const STRIPE_API_KEY = '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';
-  const EMAIL_RECIPIENT = 'bills@pensacolayouthsoccer.com';
-
-  // Set dates for previous month
+  // Get previous month info
   const today = new Date();
-  const year = today.getFullYear();
-  const firstOfThisMonth = new Date(year, today.getMonth(), 1);
-  const startDate = new Date(firstOfThisMonth);
-  startDate.setMonth(startDate.getMonth() - 1);
-  const endDate = new Date(firstOfThisMonth);
-  const monthName = startDate.toLocaleString('default', { month: 'long' });
+  const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const month = prevMonth.getMonth();
+  const year = prevMonth.getFullYear();
+  const monthName = prevMonth.toLocaleString('default', { month: 'long' });
+  const monthLabel = `${monthName} ${year}`;
 
-  const isoStart = startDate.toISOString();
-  const isoEnd = endDate.toISOString();
-  console.log(`Fetching data from ${isoStart} to ${isoEnd}`);
+  console.log(`Processing report for: ${monthLabel}`);
 
-  const sheetName = year.toString();
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = spreadsheet.getSheetByName(sheetName);
+  // Get or create the yearly sheet
+  const sheet = getOrCreateSheet(year);
 
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(sheetName);
-    sheet.appendRow([
-      'Month',
-      'Orders',
-      'Printful Cost',
-      'Retail Revenue',
-      'Printful Profit',
-      'Stripe Gross',
-      'Stripe Fees',
-      'Stripe Net',
-      'PYS Profit'
-    ]);
-
-    // Bold + underline header row
-    const header = sheet.getRange('A1:I1');
-    header.setFontWeight('bold');
-    header.setBorder(false, false, true, false, false, false);
+  // Check if this month already exists
+  if (monthAlreadyExists(sheet, monthLabel)) {
+    console.log(`Data for ${monthLabel} already exists. Skipping.`);
+    return;
   }
 
-  // ----------- STRIPE -----------
-  const stripeUrl = `https://api.stripe.com/v1/balance_transactions?limit=100`;
-  const stripeResponse = UrlFetchApp.fetch(stripeUrl, {
-    headers: { Authorization: `Bearer ${STRIPE_API_KEY}` },
-    muteHttpExceptions: true
+  // Gather all the data
+  const orderCount = getPrintfulOrderCount(month, year);
+  const printfulCosts = getPrintfulCosts(month, year);
+  const stripeData = getStripeData(month, year);
+  const salesTax = getSalesTax(month, year);
+
+  // Calculate profit
+  const profit = stripeData.net - salesTax - printfulCosts;
+
+  // Add to sheet
+  addMonthlyData(sheet, {
+    month: monthLabel,
+    orderCount: orderCount,
+    revenue: stripeData.gross,
+    stripeFees: stripeData.fees,
+    stripeNet: stripeData.net,
+    salesTax: salesTax,
+    printfulCosts: printfulCosts,
+    profit: profit
   });
 
-  const stripeData = JSON.parse(stripeResponse.getContentText()).data;
-  let stripeGross = 0, stripeFees = 0, stripeNet = 0;
+  // Send email summary
+  sendEmailSummary(monthName, year, {
+    orderCount, 
+    revenue: stripeData.gross,
+    stripeFees: stripeData.fees,
+    stripeNet: stripeData.net,
+    salesTax,
+    printfulCosts,
+    profit
+  });
 
-  if (stripeData) {
-    for (const txn of stripeData) {
-      const created = new Date(txn.created * 1000);
-      if (created >= startDate && created < endDate && txn.type === 'charge') {
-        stripeGross += txn.amount / 100;
-        stripeFees += txn.fee / 100;
-        stripeNet += txn.net / 100;
-      }
-    }
+  console.log(`Report completed for ${monthLabel}`);
+}
+
+function getOrCreateSheet(year) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(`${year}`);
+  
+  if (!sheet) {
+    sheet = ss.insertSheet(`${year}`);
+    // Create headers
+    sheet.appendRow([
+      "Month", 
+      "Orders", 
+      "Revenue", 
+      "Stripe Fees", 
+      "Stripe Net", 
+      "Sales Tax", 
+      "Printful Costs", 
+      "Profit"
+    ]);
+    sheet.getRange(1, 1, 1, 8).setFontWeight("bold");
   }
+  
+  return sheet;
+}
 
-  stripeGross = +stripeGross.toFixed(2);
-  stripeFees = +stripeFees.toFixed(2);
-  stripeNet = +stripeNet.toFixed(2);
-
-  // ----------- PRINTFUL -----------
-  const printfulResponse = UrlFetchApp.fetch(
-    `https://api.printful.com/orders?status=fulfilled&limit=100`,
-    {
-      headers: { Authorization: `Bearer ${PRINTFUL_API_KEY}` },
-      muteHttpExceptions: true
-    }
-  );
-
-  const printfulData = JSON.parse(printfulResponse.getContentText());
-  const orders = Array.isArray(printfulData.result) ? printfulData.result : [];
-
-  let orderCount = 0;
-  let printfulCost = 0;
-  let retailRevenue = 0;
-
-  for (const order of orders) {
-    const created = new Date(order.created * 1000);
-    if (created >= startDate && created < endDate) {
-      orderCount++;
-      printfulCost += parseFloat(order.costs.total);
-      if (order.retail_costs && order.retail_costs.total) {
-        retailRevenue += parseFloat(order.retail_costs.total);
-      }
-    }
-  }
-
-  printfulCost = +printfulCost.toFixed(2);
-  retailRevenue = +retailRevenue.toFixed(2);
-  const printfulProfit = +(retailRevenue - printfulCost).toFixed(2);
-  const pysProfit = +(stripeNet - printfulCost).toFixed(2);
-
-  // ----------- INSERT NEW ROW at Row 2 -----------
-  sheet.insertRows(2);
-  sheet.getRange(2, 1, 1, 9).setValues([[
-    `${monthName} ${startDate.getFullYear()}`,
-    orderCount,
-    printfulCost,
-    retailRevenue,
-    printfulProfit,
-    stripeGross,
-    stripeFees,
-    stripeNet,
-    pysProfit
-  ]]);
-
-  // ----------- ADD OR UPDATE TOTALS ROW -----------
+function monthAlreadyExists(sheet, monthLabel) {
   const lastRow = sheet.getLastRow();
-  const totalRowIndex = lastRow + 1;
+  if (lastRow <= 1) return false; // Only header row
+  
+  const existingMonths = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+  return existingMonths.includes(monthLabel);
+}
 
-  // Remove previous total row if it exists (by checking if A[lastRow] = 'Total')
-  const lastLabel = sheet.getRange(lastRow, 1).getValue();
-  if (lastLabel === 'Total') {
-    sheet.deleteRow(lastRow);
+function getPrintfulOrderCount(month, year) {
+  const startDate = new Date(year, month, 1).toISOString();
+  const endDate = new Date(year, month + 1, 1).toISOString();
+  
+  const url = `https://api.printful.com/orders?limit=100&status=fulfilled&from=${startDate}&to=${endDate}`;
+  
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + PRINTFUL_API_KEY },
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.log('Printful API Error:', response.getContentText());
+      return 0;
+    }
+    
+    const json = JSON.parse(response.getContentText());
+    const orders = json.result || [];
+    
+    console.log(`Printful: Found ${orders.length} orders`);
+    return orders.length;
+    
+  } catch (error) {
+    console.log('Error fetching Printful order count:', error);
+    return 0;
   }
+}
 
-  const newLastRow = sheet.getLastRow();
-  const totalsRange = sheet.getRange(newLastRow + 1, 1, 1, 9);
-  totalsRange.setValues([[
-    'Total',
-    `=SUM(B2:B${newLastRow})`,
-    `=SUM(C2:C${newLastRow})`,
-    `=SUM(D2:D${newLastRow})`,
-    `=SUM(E2:E${newLastRow})`,
-    `=SUM(F2:F${newLastRow})`,
-    `=SUM(G2:G${newLastRow})`,
-    `=SUM(H2:H${newLastRow})`,
-    `=SUM(I2:I${newLastRow})`
+function getPrintfulCosts(month, year) {
+  const startDate = new Date(year, month, 1).toISOString();
+  const endDate = new Date(year, month + 1, 1).toISOString();
+  
+  const url = `https://api.printful.com/orders?limit=100&status=fulfilled&from=${startDate}&to=${endDate}`;
+  
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + PRINTFUL_API_KEY },
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.log('Printful API Error:', response.getContentText());
+      return 0;
+    }
+    
+    const json = JSON.parse(response.getContentText());
+    const orders = json.result || [];
+    
+    let totalCosts = 0;
+    for (let order of orders) {
+      const cost = parseFloat(order.costs?.total) || 0;
+      totalCosts += cost;
+    }
+    
+    console.log(`Printful: Total costs = $${totalCosts.toFixed(2)}`);
+    return totalCosts;
+    
+  } catch (error) {
+    console.log('Error fetching Printful costs:', error);
+    return 0;
+  }
+}
+
+function getStripeData(month, year) {
+  const startUnix = Math.floor(new Date(year, month, 1).getTime() / 1000);
+  const endUnix = Math.floor(new Date(year, month + 1, 1).getTime() / 1000);
+  
+  const url = `https://api.stripe.com/v1/balance_transactions?limit=100&created[gte]=${startUnix}&created[lt]=${endUnix}`;
+  
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + STRIPE_API_KEY },
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.log('Stripe API Error:', response.getContentText());
+      return { gross: 0, fees: 0, net: 0 };
+    }
+    
+    const json = JSON.parse(response.getContentText());
+    let gross = 0, fees = 0, net = 0;
+    
+    for (let txn of json.data || []) {
+      if (txn.type === "charge") {
+        gross += txn.amount;
+        fees += txn.fee;
+        net += txn.net;
+      }
+    }
+    
+    // Convert from cents to dollars
+    const result = {
+      gross: gross / 100,
+      fees: fees / 100,
+      net: net / 100
+    };
+    
+    console.log(`Stripe: Gross=$${result.gross.toFixed(2)}, Fees=$${result.fees.toFixed(2)}, Net=$${result.net.toFixed(2)}`);
+    return result;
+    
+  } catch (error) {
+    console.log('Error fetching Stripe data:', error);
+    return { gross: 0, fees: 0, net: 0 };
+  }
+}
+
+function getSalesTax(month, year) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ordersSheet = ss.getSheetByName('Orders');
+  
+  if (!ordersSheet) {
+    console.log('Orders sheet not found');
+    return 0;
+  }
+  
+  const data = ordersSheet.getDataRange().getValues();
+  let totalTax = 0;
+  
+  // Skip header row (start at i=1)
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const submittedDate = row[1]; // Column B
+    const canceled = row[2];      // Column C
+    const taxValue = row[7];      // Column H (Taxes)
+    
+    // Skip canceled orders
+    if (canceled === true || canceled === "TRUE") continue;
+    
+    // Check if submitted date is valid and in our target month
+    if (!submittedDate || isNaN(Date.parse(submittedDate))) continue;
+    
+    const date = new Date(submittedDate);
+    if (date.getFullYear() === year && date.getMonth() === month) {
+      // Parse tax value (remove USD if present)
+      let tax = 0;
+      if (taxValue) {
+        const taxString = taxValue.toString().replace(/\s*USD\s*/g, '');
+        tax = parseFloat(taxString) || 0;
+      }
+      totalTax += tax;
+    }
+  }
+  
+  console.log(`Sales Tax: Total = $${totalTax.toFixed(2)}`);
+  return totalTax;
+}
+
+function addMonthlyData(sheet, data) {
+  // Insert new row at the top (after headers)
+  sheet.insertRows(2);
+  
+  // Add the data
+  sheet.getRange(2, 1, 1, 8).setValues([[
+    data.month,
+    data.orderCount,
+    data.revenue,
+    data.stripeFees,
+    data.stripeNet,
+    data.salesTax,
+    data.printfulCosts,
+    data.profit
   ]]);
-  totalsRange.setFontWeight('bold');
-  totalsRange.setBorder(true, null, null, null, null, null);
+  
+  // Format the numbers as currency
+  sheet.getRange(2, 3, 1, 6).setNumberFormat("$#,##0.00");
+  
+  // Color code the profit
+  const profitCell = sheet.getRange(2, 8);
+  if (data.profit >= 0) {
+    profitCell.setFontColor("green");
+  } else {
+    profitCell.setFontColor("red");
+  }
+  
+  // Add totals row at the bottom
+  updateTotalsRow(sheet);
+}
 
-  // ----------- SEND EMAIL -----------
-  const htmlBody = `
-  <p>🧾 <strong>PYS Monthly Merch Report: ${monthName} ${year}</strong><br>
-  <a href="https://www.pensacolayouthsoccer.com/shop">www.pensacolayouthsoccer.com/shop</a></p>
+function updateTotalsRow(sheet) {
+  const lastDataRow = sheet.getLastRow();
+  const totalsRow = lastDataRow + 1;
+  
+  // Clear any existing totals
+  sheet.getRange(totalsRow, 1, 1, 8).clearContent();
+  
+  // Add totals formulas (skip month column, sum the rest)
+  sheet.getRange(totalsRow, 1, 1, 8).setValues([[
+    "TOTAL",
+    `=SUM(B2:B${lastDataRow})`, // Orders
+    `=SUM(C2:C${lastDataRow})`, // Revenue
+    `=SUM(D2:D${lastDataRow})`, // Stripe Fees
+    `=SUM(E2:E${lastDataRow})`, // Stripe Net
+    `=SUM(F2:F${lastDataRow})`, // Sales Tax
+    `=SUM(G2:G${lastDataRow})`, // Printful Costs
+    `=SUM(H2:H${lastDataRow})`  // Profit
+  ]]);
+  
+  // Format totals row
+  sheet.getRange(totalsRow, 1, 1, 8).setFontWeight("bold");
+  sheet.getRange(totalsRow, 3, 1, 6).setNumberFormat("$#,##0.00");
+}
 
-  <p>🛍 Orders: ${orderCount}<br>
-  💵 Retail Revenue: $${retailRevenue}<br>
-  🧾 Printful Cost: $${printfulCost}<br>
-  📈 Printful Profit: $${printfulProfit}</p>
+function sendEmailSummary(monthName, year, data) {
+  const subject = `PYS Monthly Report - ${monthName} ${year}`;
+  
+  const body = `
+🧾 PYS Monthly Merch Report: ${monthName} ${year}
+https://www.pensacolayouthsoccer.com/shop
 
-  <p>💳 Stripe Gross: $${stripeGross}<br>
-  💸 Stripe Fees: $${stripeFees}<br>
-  🏦 Stripe Net: $${stripeNet}</p>
+📊 SUMMARY:
+🛍️ Orders: ${data.orderCount}
+💰 Revenue: $${data.revenue.toFixed(2)}
+💸 Stripe Fees: $${data.stripeFees.toFixed(2)}
+🏦 Stripe Net: $${data.stripeNet.toFixed(2)}
+📄 Sales Tax: $${data.salesTax.toFixed(2)}
+🏭 Printful Costs: $${data.printfulCosts.toFixed(2)}
+💵 Final Profit: $${data.profit.toFixed(2)}
 
-  <p>📊 PYS Net Profit (Stripe Net - Printful Cost): $${pysProfit}</p>
+Calculation: Stripe Net ($${data.stripeNet.toFixed(2)}) - Sales Tax ($${data.salesTax.toFixed(2)}) - Printful Costs ($${data.printfulCosts.toFixed(2)}) = $${data.profit.toFixed(2)}
 `;
 
-MailApp.sendEmail({
-  to: EMAIL_RECIPIENT,
-  subject: `PYS Monthly Merch Report – ${monthName} ${year}`,
-  htmlBody
-});
+  try {
+    MailApp.sendEmail({
+      to: EMAIL_RECIPIENT,
+      subject: subject,
+      body: body
+    });
+    console.log('Email sent successfully');
+  } catch (error) {
+    console.log('Error sending email:', error);
+  }
 }
