@@ -1,7 +1,7 @@
 // === CONFIGURATION ===
 const PRINTFUL_API_KEY = PropertiesService.getScriptProperties().getProperty('PRINTFUL_API_KEY');
 const STRIPE_API_KEY = PropertiesService.getScriptProperties().getProperty('STRIPE_API_KEY');
-const EMAIL_RECIPIENT = 'phil@nickinson.net';
+const EMAIL_RECIPIENT = PropertiesService.getScriptProperties().getProperty('EMAIL');
 
 function main() {
   // Get previous month info
@@ -90,14 +90,20 @@ function monthAlreadyExists(sheet, monthLabel) {
 }
 
 function getPrintfulOrderCount(month, year) {
-  const startDate = new Date(year, month, 1).toISOString();
-  const endDate = new Date(year, month + 1, 1).toISOString();
+  // Create proper date range for the specific month
+  const startDate = new Date(year, month, 1);
+  const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
   
-  const url = `https://api.printful.com/orders?limit=100&status=fulfilled&from=${startDate}&to=${endDate}`;
+  console.log(`Getting orders for ${year}-${String(month+1).padStart(2, '0')} (${startDate.toISOString()} to ${endDate.toISOString()})`);
+  
+  const url = `https://api.printful.com/orders?limit=100&status=fulfilled&from=${startDate.toISOString()}&to=${endDate.toISOString()}`;
   
   try {
     const response = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + PRINTFUL_API_KEY },
+      headers: { 
+        Authorization: 'Bearer ' + PRINTFUL_API_KEY,
+        'Content-Type': 'application/json'
+      },
       muteHttpExceptions: true
     });
     
@@ -109,8 +115,16 @@ function getPrintfulOrderCount(month, year) {
     const json = JSON.parse(response.getContentText());
     const orders = json.result || [];
     
-    console.log(`Printful: Found ${orders.length} orders`);
-    return orders.length;
+    // Additional filtering with proper Unix timestamp conversion
+    const filteredOrders = orders.filter(order => {
+      // Convert Unix timestamp to proper date
+      const orderDate = new Date(parseInt(order.created) * 1000); // Correct - converts Unix timestamp
+      console.log(`Order ${order.id}: ${order.created} -> ${orderDate.toISOString()}`);
+      return orderDate.getFullYear() === year && orderDate.getMonth() === month;
+    });
+    
+    console.log(`Printful: Found ${orders.length} orders from API, ${filteredOrders.length} after date filtering`);
+    return filteredOrders.length;
     
   } catch (error) {
     console.log('Error fetching Printful order count:', error);
@@ -119,14 +133,20 @@ function getPrintfulOrderCount(month, year) {
 }
 
 function getPrintfulCosts(month, year) {
-  const startDate = new Date(year, month, 1).toISOString();
-  const endDate = new Date(year, month + 1, 1).toISOString();
+  // Create proper date range for the specific month
+  const startDate = new Date(year, month, 1);
+  const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999); // Last day of month, end of day
   
-  const url = `https://api.printful.com/orders?limit=100&status=fulfilled&from=${startDate}&to=${endDate}`;
+  console.log(`Getting costs for ${year}-${String(month+1).padStart(2, '0')} (${startDate.toISOString()} to ${endDate.toISOString()})`);
+  
+  const url = `https://api.printful.com/orders?limit=100&status=fulfilled&from=${startDate.toISOString()}&to=${endDate.toISOString()}`;
   
   try {
     const response = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + PRINTFUL_API_KEY },
+      headers: { 
+        Authorization: 'Bearer ' + PRINTFUL_API_KEY,
+        'Content-Type': 'application/json'
+      },
       muteHttpExceptions: true
     });
     
@@ -138,13 +158,19 @@ function getPrintfulCosts(month, year) {
     const json = JSON.parse(response.getContentText());
     const orders = json.result || [];
     
-    let totalCosts = 0;
-    for (let order of orders) {
-      const cost = parseFloat(order.costs?.total) || 0;
-      totalCosts += cost;
-    }
-    
-    console.log(`Printful: Total costs = $${totalCosts.toFixed(2)}`);
+// Additional filtering with proper Unix timestamp conversion
+const filteredOrders = orders.filter(order => {
+  const orderDate = new Date(parseInt(order.created) * 1000); // Convert Unix timestamp
+  return orderDate.getFullYear() === year && orderDate.getMonth() === month;
+});
+
+let totalCosts = 0;
+for (let order of filteredOrders) { // Use filteredOrders, not orders
+  const cost = parseFloat(order.costs?.total) || 0;
+  totalCosts += cost;
+  console.log(`Order ${order.id}: $${cost.toFixed(2)}`);
+}    
+    console.log(`Printful: Total costs for ${filteredOrders.length} orders = $${totalCosts.toFixed(2)}`);
     return totalCosts;
     
   } catch (error) {
@@ -271,21 +297,29 @@ function addMonthlyData(sheet, data) {
 
 function updateTotalsRow(sheet) {
   const lastDataRow = sheet.getLastRow();
-  const totalsRow = lastDataRow + 1;
   
-  // Clear any existing totals
-  sheet.getRange(totalsRow, 1, 1, 8).clearContent();
+  // Find and remove existing TOTAL rows
+  for (let i = lastDataRow; i >= 2; i--) {
+    const cellValue = sheet.getRange(i, 1).getValue();
+    if (cellValue === "TOTAL") {
+      sheet.deleteRow(i);
+    }
+  }
   
-  // Add totals formulas (skip month column, sum the rest)
+  // Recalculate last data row after deletions
+  const newLastDataRow = sheet.getLastRow();
+  const totalsRow = newLastDataRow + 1;
+  
+  // Add new totals row
   sheet.getRange(totalsRow, 1, 1, 8).setValues([[
     "TOTAL",
-    `=SUM(B2:B${lastDataRow})`, // Orders
-    `=SUM(C2:C${lastDataRow})`, // Revenue
-    `=SUM(D2:D${lastDataRow})`, // Stripe Fees
-    `=SUM(E2:E${lastDataRow})`, // Stripe Net
-    `=SUM(F2:F${lastDataRow})`, // Sales Tax
-    `=SUM(G2:G${lastDataRow})`, // Printful Costs
-    `=SUM(H2:H${lastDataRow})`  // Profit
+    `=SUM(B2:B${newLastDataRow})`, // Orders
+    `=SUM(C2:C${newLastDataRow})`, // Revenue
+    `=SUM(D2:D${newLastDataRow})`, // Stripe Fees
+    `=SUM(E2:E${newLastDataRow})`, // Stripe Net
+    `=SUM(F2:F${newLastDataRow})`, // Sales Tax
+    `=SUM(G2:G${newLastDataRow})`, // Printful Costs
+    `=SUM(H2:H${newLastDataRow})`  // Profit
   ]]);
   
   // Format totals row
@@ -321,5 +355,127 @@ Calculation: Stripe Net ($${data.stripeNet.toFixed(2)}) - Sales Tax ($${data.sal
     console.log('Email sent successfully');
   } catch (error) {
     console.log('Error sending email:', error);
+  }
+}
+
+// === TEST FUNCTIONS ===
+
+function testPrintfulConnection() {
+  console.log("=== TESTING PRINTFUL API CONNECTION ===");
+  
+  const PRINTFUL_API_KEY = PropertiesService.getScriptProperties().getProperty('PRINTFUL_API_KEY');
+  
+  if (!PRINTFUL_API_KEY) {
+    console.log("❌ ERROR: PRINTFUL_API_KEY not found in script properties");
+    return false;
+  }
+  
+  console.log("✅ API key found (length: " + PRINTFUL_API_KEY.length + ")");
+  
+  // Test basic API connection with orders endpoint
+  try {
+    const response = UrlFetchApp.fetch('https://api.printful.com/orders?limit=1', {
+      headers: { 
+        'Authorization': 'Bearer ' + PRINTFUL_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+    
+    console.log("Response code: " + response.getResponseCode());
+    
+    if (response.getResponseCode() !== 200) {
+      console.log("❌ API connection failed: " + response.getContentText());
+      return false;
+    }
+    
+    console.log("✅ Printful API connection successful");
+    return true;
+    
+  } catch (error) {
+    console.log("❌ Error testing connection: " + error.toString());
+    return false;
+  }
+}
+
+function testSpecificMonths() {
+  console.log("=== TESTING SPECIFIC MONTHS ===");
+  
+  if (!testPrintfulConnection()) {
+    return;
+  }
+  
+  // Test June 2025 (month index 5)
+  console.log("\n--- Testing June 2025 ---");
+  const juneOrders = getPrintfulOrderCount(5, 2025);
+  const juneCosts = getPrintfulCosts(5, 2025);
+  
+  // Test July 2025 (month index 6)  
+  console.log("\n--- Testing July 2025 ---");
+  const julyOrders = getPrintfulOrderCount(6, 2025);
+  const julyCosts = getPrintfulCosts(6, 2025);
+  
+  console.log("\n=== SUMMARY ===");
+  console.log(`June: ${juneOrders} orders, $${juneCosts.toFixed(2)} costs`);
+  console.log(`July: ${julyOrders} orders, $${julyCosts.toFixed(2)} costs`);
+  
+  // Expected results based on your CSV:
+  console.log("\nExpected results from CSV:");
+  console.log("June: 10 orders");
+  console.log("July: 1 order");
+}
+
+function debugJulyOrder() {
+  console.log("=== DEBUGGING JULY ORDER ===");
+  
+  const PRINTFUL_API_KEY = PropertiesService.getScriptProperties().getProperty('PRINTFUL_API_KEY');
+  
+  // Get a wider date range around July to see what's there
+  const startDate = new Date(2025, 5, 1); // June 1st
+  const endDate = new Date(2025, 7, 31); // August 31st
+  
+  console.log(`Searching wide range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+  
+  const url = `https://api.printful.com/orders?limit=100&from=${startDate.toISOString()}&to=${endDate.toISOString()}`;
+  
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      headers: { 
+        Authorization: 'Bearer ' + PRINTFUL_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.log('API Error:', response.getContentText());
+      return;
+    }
+    
+    const json = JSON.parse(response.getContentText());
+    const orders = json.result || [];
+    
+    console.log(`\nFound ${orders.length} orders in June-August range`);
+    
+    orders.forEach(order => {
+      const orderDate = new Date(order.created);
+      const month = orderDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      console.log(`- Order ${order.id}: ${order.created} (${month}) - Status: ${order.status} - Cost: $${order.costs?.total || 'N/A'}`);
+    });
+    
+    // Look specifically for order #2855
+    const order2855 = orders.find(o => o.external_id === "2855" || o.id === "2855");
+    if (order2855) {
+      console.log("\n🎯 Found order #2855:");
+      console.log("- Created:", order2855.created);
+      console.log("- Status:", order2855.status);
+      console.log("- Cost:", order2855.costs?.total);
+      console.log("- External ID:", order2855.external_id);
+    } else {
+      console.log("\n❌ Could not find order #2855 in API results");
+    }
+    
+  } catch (error) {
+    console.log('Error:', error);
   }
 }
