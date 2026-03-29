@@ -17,7 +17,13 @@ df = pd.read_csv(input_path)
 # === TEAM NAME RESOLUTION ===
 # If a roster CSV is provided, resolve short schedule names (e.g. "Team 3-Kennedy")
 # to full TS1 names (e.g. "Team 3-Brian Kennedy") by matching team number + division.
-team_lookup = {}  # (team_number, division) -> full team name
+team_lookup = {}  # (team_number, normalized_division) -> full team name
+
+def normalize_division(div):
+    # Handles mismatched formats between schedule and roster exports, e.g.:
+    #   schedule: "Under 12-Boys"  →  roster: "Under-12 Boys"
+    # Normalize by stripping hyphens, spaces, and lowercasing.
+    return re.sub(r"[\s\-]+", "", str(div)).lower()
 
 if len(sys.argv) >= 3:
     roster_path = Path(sys.argv[2])
@@ -28,13 +34,13 @@ if len(sys.argv) >= 3:
     for _, row in roster.drop_duplicates().iterrows():
         m = re.match(r"^Team (\d+)", str(row["Team"]))
         if m:
-            key = (m.group(1), str(row["Division"]).strip())
+            key = (m.group(1), normalize_division(row["Division"]))
             team_lookup[key] = str(row["Team"]).strip()
 
 def resolve_team(name, division):
     m = re.match(r"^Team (\d+)", str(name))
     if m:
-        key = (m.group(1), str(division).strip())
+        key = (m.group(1), normalize_division(division))
         if key in team_lookup:
             return team_lookup[key]
     return name  # fall back to original if no match found
