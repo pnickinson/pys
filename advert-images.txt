@@ -1,0 +1,16 @@
+# PYS Shop Ad Images
+# Squarespace CDN URLs — one per line
+# All link to pensacolayouthsoccer.com/shop
+
+ad_youthtee     https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/5e5b1850-bdd3-462c-97c1-e645c170d91a/ad_youthtee.png?content-type=image%2Fpng
+ad_tank         https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/27823442-a4ab-4020-9216-84d48998e442/ad_tank.png?content-type=image%2Fpng
+ad_mug          https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/992cadaf-85ba-47f0-9984-578acbe6a51d/ad_mug.png?content-type=image%2Fpng
+ad_tshirt       https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/abdb0fc2-cf32-4c37-b9e1-2f2215633dd0/ad_tshirt.png?content-type=image%2Fpng
+ad_whitemug     https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/3f76cb7b-e39a-490a-adf6-6b8118b9020b/ad_whitemug.png?content-type=image%2Fpng
+ad_toddlertee   https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/82b4615e-1fa1-4015-935f-7ae789b1e9e3/ad_toddlertee.png?content-type=image%2Fpng
+ad_relaxedtee   https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/f4b9c475-58cc-42cd-b482-273b68e73283/ad_relaxedtee.png?content-type=image%2Fpng
+ad_windbreaker  https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/012a26d6-414a-4569-8163-8cf2e6c0ee32/ad_windbreaker.png?content-type=image%2Fpng
+ad_beanie       https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/254cc44b-ae73-4323-829c-f11748f3690d/ad_beanie.png?content-type=image%2Fpng
+ad_fleece       https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/a1844734-4a76-465f-aaf8-ec0470643de7/ad_fleece.png?content-type=image%2Fpng
+ad_onesie       https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/0cb6bdab-fb24-4ecd-b939-2c4ea94af444/ad_onesie.png?content-type=image%2Fpng
+ad_hoodie       https://images.squarespace-cdn.com/content/5bdb51a812b13f9a4e4fb419/3e5433c8-5153-45d6-9236-49730ebf934d/ad_hoodie.png?content-type=image%2Fpng

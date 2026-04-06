@@ -1,0 +1,294 @@
+<!--
+  PYS Age Group Calculator — Fall 2026 and beyond (school-year system)
+  =====================================================================
+  HOW TO ADD THIS TO SQUARESPACE:
+    1. Edit the page where you want the calculator to appear
+    2. Add a "Code" block (Insert Point > More > Code)
+    3. Paste everything below into the code block
+    4. Save and preview
+
+  NOTES:
+  - No external dependencies — pure HTML/CSS/JS
+  - Works on desktop and mobile
+  - Spring 2026 still uses the old calendar-year system;
+    this tool is for Fall 2026 onward
+-->
+
+<style>
+.pys-calc {
+  font-family: inherit;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.pys-calc p.pys-intro {
+  font-size: 0.92rem;
+  color: #555;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.pys-calc p.pys-intro strong {
+  color: #333;
+}
+
+.pys-selects {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.pys-field {
+  flex: 1;
+}
+
+.pys-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.pys-field select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 1rem;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  appearance: auto;
+  transition: border-color 0.15s;
+}
+
+.pys-field select:focus {
+  outline: none;
+  border-color: #3182ce;
+}
+
+/* Result card */
+.pys-result {
+  display: none;
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-top: 4px;
+}
+
+.pys-result.pys-same {
+  background: #f0fff4;
+  border: 2px solid #68d391;
+}
+
+.pys-result.pys-changed {
+  background: #fffbeb;
+  border: 2px solid #f6ad55;
+}
+
+.pys-result.pys-neweligible {
+  background: #ebf8ff;
+  border: 2px solid #63b3ed;
+}
+
+.pys-result.pys-tooyoung,
+.pys-result.pys-tooold {
+  background: #f7fafc;
+  border: 2px solid #cbd5e0;
+}
+
+.pys-result-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.pys-result-group {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1a202c;
+  line-height: 1.15;
+  margin-bottom: 6px;
+}
+
+.pys-result-note {
+  font-size: 0.88rem;
+  color: #4a5568;
+  line-height: 1.45;
+}
+
+.pys-result-old {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  font-size: 0.82rem;
+  color: #718096;
+}
+
+@media (max-width: 380px) {
+  .pys-selects { flex-direction: column; }
+}
+</style>
+
+<div class="pys-calc">
+  <p class="pys-intro">
+    Starting <strong>Fall 2026</strong>, PYS is switching to a
+    <strong>school-year cutoff (August&nbsp;1)</strong> for age groups,
+    following updated US Youth Soccer guidelines.
+    Enter your child's birth month and year to see which group they'll be in.
+    <em>Spring 2026 still uses the previous calendar-year rules.</em>
+  </p>
+
+  <div class="pys-selects">
+    <div class="pys-field">
+      <label for="pys-month">Birth Month</label>
+      <select id="pys-month" onchange="pysCalc()">
+        <option value="">Month…</option>
+        <option value="1">January</option>
+        <option value="2">February</option>
+        <option value="3">March</option>
+        <option value="4">April</option>
+        <option value="5">May</option>
+        <option value="6">June</option>
+        <option value="7">July</option>
+        <option value="8">August</option>
+        <option value="9">September</option>
+        <option value="10">October</option>
+        <option value="11">November</option>
+        <option value="12">December</option>
+      </select>
+    </div>
+    <div class="pys-field">
+      <label for="pys-year">Birth Year</label>
+      <select id="pys-year" onchange="pysCalc()">
+        <option value="">Year…</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="pys-result" class="pys-result" role="status" aria-live="polite">
+    <div class="pys-result-eyebrow" id="pys-eyebrow"></div>
+    <div class="pys-result-group"  id="pys-group"></div>
+    <div class="pys-result-note"   id="pys-note"></div>
+    <div class="pys-result-old"    id="pys-old"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+
+  // Populate year dropdown: covers all eligible ranges plus some buffer
+  var yearSel = document.getElementById('pys-year');
+  for (var y = 2022; y >= 2009; y--) {
+    var opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = y;
+    yearSel.appendChild(opt);
+  }
+
+  // Map competitive age → PYS group name (returns null if out of range)
+  function ageGroup(compAge) {
+    if (compAge === 5)                    return 'Under-5';
+    if (compAge === 6)                    return 'Under-6';
+    if (compAge >= 7  && compAge <= 8)    return 'Under-8';
+    if (compAge >= 9  && compAge <= 10)   return 'Under-10';
+    if (compAge >= 11 && compAge <= 12)   return 'Under-12';
+    if (compAge >= 13 && compAge <= 15)   return 'Under-15';
+    return null;
+  }
+
+  window.pysCalc = function () {
+    var m   = parseInt(document.getElementById('pys-month').value, 10);
+    var y   = parseInt(document.getElementById('pys-year').value,  10);
+    var box = document.getElementById('pys-result');
+
+    // Hide until both fields are filled
+    if (!m || !y) { box.style.display = 'none'; return; }
+
+    // ── New system: school year, Aug 1 cutoff ──────────────────────────
+    // Competitive age = the age the player turns during the 2026-27 season
+    // (Aug 1, 2026 – Jul 31, 2027).
+    //
+    //   Born Jan–Jul → birthday falls Jan–Jul 2027 (within season)  → 2027 − year
+    //   Born Aug–Dec → birthday falls Aug–Dec 2026 (within season)  → 2026 − year
+    var newAge = (m <= 7) ? (2027 - y) : (2026 - y);
+
+    // ── Old system: calendar year, for comparison ──────────────────────
+    var oldAge = 2026 - y;
+
+    var newGrp = ageGroup(newAge);
+    var oldGrp = ageGroup(oldAge);
+
+    var eyebrow = document.getElementById('pys-eyebrow');
+    var group   = document.getElementById('pys-group');
+    var note    = document.getElementById('pys-note');
+    var old     = document.getElementById('pys-old');
+
+    // Reset
+    box.className  = 'pys-result';
+    box.style.display = 'block';
+    old.style.display = 'none';
+    old.textContent   = '';
+
+    // ── Too young ──────────────────────────────────────────────────────
+    if (newAge < 5) {
+      box.classList.add('pys-tooyoung');
+      eyebrow.textContent = 'Not yet eligible';
+      group.textContent   = 'Too young for Fall 2026';
+      note.textContent    = 'Your child will be eligible to register once they '
+                          + 'turn 5 before August of a future season.';
+      return;
+    }
+
+    // ── Too old ────────────────────────────────────────────────────────
+    if (newAge > 15) {
+      box.classList.add('pys-tooold');
+      eyebrow.textContent = 'High school age';
+      group.textContent   = 'U-15 and older';
+      note.textContent    = 'Players 16 and older typically compete through '
+                          + 'their high school program.';
+      if (oldGrp) {
+        old.style.display = 'block';
+        old.innerHTML = 'Under the previous calendar-year rules, they would '
+                      + 'have been in <strong>' + oldGrp + '</strong>.';
+      }
+      return;
+    }
+
+    // ── Eligible ───────────────────────────────────────────────────────
+    eyebrow.textContent = 'Fall 2026 Age Group';
+    group.textContent   = newGrp;
+
+    if (newGrp === oldGrp) {
+      // No change
+      box.classList.add('pys-same');
+      note.textContent = 'Same as before — this group hasn\'t changed under '
+                       + 'the new school-year rules.';
+
+    } else if (oldAge < 5) {
+      // Gained eligibility under new rules
+      box.classList.add('pys-neweligible');
+      note.textContent = 'Good news: under the new school-year rules, your '
+                       + 'child is now eligible for Fall 2026 when they '
+                       + 'would not have been under the old rules.';
+
+    } else {
+      // Group changed
+      box.classList.add('pys-changed');
+      note.textContent = 'Your child\'s group is changing under the new '
+                       + 'school-year rules.';
+      if (oldGrp) {
+        old.style.display = 'block';
+        old.innerHTML = 'Under the previous calendar-year rules, they would '
+                      + 'have been in <strong>' + oldGrp + '</strong>.';
+      }
+    }
+  };
+
+}());
+</script>
