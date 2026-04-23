@@ -14,4 +14,4 @@ API_VERSION = "v22.0"
 TOKEN_FILE  = os.path.join(SCRIPT_DIR, "page_token.txt")
 DATA_DIR    = os.path.join(SCRIPT_DIR, "data")
 OUTPUT_HTML = os.path.join(SCRIPT_DIR, "dashboard.html")
-LOGO_PATH   = os.path.join(SCRIPT_DIR, "assets", "logo.png")
+LOGO_PATH   = os.path.join(SCRIPT_DIR, "assets", "PYS_logo_final.png")
