@@ -135,7 +135,7 @@ def process_fb(fb_page, fb_fan_history, fb_posts):
         return (p.get("reaction_count", 0) or 0) + (p.get("comment_count", 0) or 0)
 
     top = []
-    for p in sorted(posts, key=impressions, reverse=True)[:12]:
+    for p in sorted(posts, key=impressions, reverse=True)[:10]:
         top.append({
             "message":      (p.get("message") or p.get("story") or "")[:220],
             "created_time": p.get("created_time", ""),
@@ -226,7 +226,7 @@ def process_ig(ig_account, ig_follower_history, ig_insights, ig_media):
         return (m.get("reach", 0) or 0) + (m.get("like_count", 0) or 0)
 
     top = []
-    for m in sorted(media, key=score, reverse=True)[:12]:
+    for m in sorted(media, key=score, reverse=True)[:10]:
         mtype = m.get("media_product_type") or m.get("media_type", "")
         is_video = mtype in ("REELS", "VIDEO") or m.get("media_type") == "VIDEO"
         if is_video:
