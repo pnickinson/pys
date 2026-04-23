@@ -74,12 +74,15 @@ def detect_post_type(post):
     attachments = post.get("attachments", {}).get("data", [])
     if attachments:
         t = attachments[0].get("type", "")
-        if t == "photo":
+        mt = attachments[0].get("media_type", "")
+        if t in ("photo", "album", "sticker", "animated_image_video", "cover_photo", "profile_media") or mt == "photo":
             return "Photo"
-        if t in ("video_inline", "video"):
+        if t in ("video_inline", "video") or mt == "video":
             return "Video"
         if t == "share":
             return "Link"
+    if post.get("full_picture"):
+        return "Photo"
     return "Text"
 
 
