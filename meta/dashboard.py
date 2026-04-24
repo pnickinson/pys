@@ -269,10 +269,31 @@ def process_ig(ig_account, ig_follower_history, ig_insights, ig_media):
     }
 
 
+# ── Mailchimp processing ──────────────────────────────────────────────────────
+
+def process_mailchimp(campaigns):
+    campaigns = campaigns or []
+    # Reverse so charts show oldest → newest left to right
+    ordered = list(reversed(campaigns))
+    labels      = [(c["subject"] or c["title"] or "")[:35] for c in ordered]
+    open_rates  = [round(c.get("open_rate", 0) * 100, 1) for c in ordered]
+    click_rates = [round(c.get("click_rate", 0) * 100, 1) for c in ordered]
+    avg_open  = round(sum(open_rates)  / len(open_rates),  1) if open_rates  else 0
+    avg_click = round(sum(click_rates) / len(click_rates), 1) if click_rates else 0
+    return {
+        "campaigns":   ordered,
+        "labels":      labels,
+        "open_rates":  open_rates,
+        "click_rates": click_rates,
+        "avg_open":    avg_open,
+        "avg_click":   avg_click,
+    }
+
+
 # ── HTML generation ───────────────────────────────────────────────────────────
 
-def generate_html(fb, ig, logo_uri, generated, failed=None):
-    data_json = json.dumps({"fb": fb, "ig": ig}, ensure_ascii=False)
+def generate_html(fb, ig, mc, logo_uri, generated, failed=None):
+    data_json = json.dumps({"fb": fb, "ig": ig, "mc": mc}, ensure_ascii=False)
     logo_tag = (f'<img src="{logo_uri}" class="header-logo" alt="PYS">'
                 if logo_uri else
                 '<span class="header-logo-text">PYS</span>')
@@ -354,6 +375,7 @@ body {{ font-family: 'Muli', sans-serif; background: var(--bg); color: var(--dar
 }}
 .tag-fb {{ background: #e8f0fd; color: var(--fb); }}
 .tag-ig {{ background: #fde8ef; color: var(--ig); }}
+.tag-mc {{ background: #e0f5f3; color: #00A99D; }}
 
 /* Section headers */
 .section-header {{
@@ -432,6 +454,22 @@ body {{ font-family: 'Muli', sans-serif; background: var(--bg); color: var(--dar
 .post-link {{ text-decoration: none; color: inherit; }}
 .post-link:hover .post-card {{ box-shadow: 0 4px 16px rgba(0,0,0,.12); }}
 
+/* Mailchimp campaign table */
+.mc-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+.mc-table th {{
+  text-align: left; font-size: 11px; font-weight: 700; color: var(--gray);
+  text-transform: uppercase; letter-spacing: .4px;
+  padding: 0 12px 10px; border-bottom: 2px solid #f0f0f0;
+}}
+.mc-table td {{ padding: 10px 12px; border-bottom: 1px solid #f7f7f7; vertical-align: middle; }}
+.mc-table tr:last-child td {{ border-bottom: none; }}
+.mc-table tr:hover td {{ background: #fafafa; }}
+.mc-subject {{ font-weight: 600; color: var(--dark); max-width: 320px; }}
+.mc-rate-bar {{ display: flex; align-items: center; gap: 8px; }}
+.mc-bar {{ height: 6px; border-radius: 3px; min-width: 2px; }}
+.mc-bar-open  {{ background: #00A99D; }}
+.mc-bar-click {{ background: var(--orange); }}
+
 /* Responsive */
 @media (max-width: 900px) {{
   .chart-row, .chart-row.triple {{ grid-template-columns: 1fr; }}
@@ -500,6 +538,21 @@ body {{ font-family: 'Muli', sans-serif; background: var(--bg); color: var(--dar
     <h2 style="font-size:16px;font-weight:700;">Top Instagram Posts</h2>
   </div>
   <div class="posts-grid" id="igPosts"></div>
+
+  <!-- Mailchimp -->
+  <div class="section-header" style="margin-top:44px;">
+    <div class="platform-icon" style="background:#00A99D;">✉</div>
+    <h2>Email (Mailchimp)</h2>
+  </div>
+
+  <div class="chart-row">
+    <div class="chart-card"><h3>Open Rate per Campaign <span style="font-weight:400;color:var(--gray);font-size:12px">(recent 10, oldest → newest)</span></h3><canvas id="mcOpenChart"></canvas></div>
+    <div class="chart-card"><h3>Click Rate per Campaign</h3><canvas id="mcClickChart"></canvas></div>
+  </div>
+
+  <div class="chart-card" style="margin-bottom:20px;">
+    <table class="mc-table" id="mcTable"></table>
+  </div>
 
 </div><!-- /container -->
 
@@ -608,15 +661,18 @@ function weeklySlice(labels, values) {{
 
 function renderScorecards() {{
   const fb = DATA.fb, ig = DATA.ig;
+  const mc = DATA.mc || {{}};
   const cards = [
     {{ tag:'fb', value: fmt(fb.followers),                                label:'Facebook Followers' }},
     {{ tag:'ig', value: fmt(ig.followers),                                label:'Instagram Followers' }},
     {{ tag:'ig', value: ig.latest_reach ? fmt(ig.latest_reach) : '—',    label:'IG Reach (Recent Month)' }},
     {{ tag:'fb', value: fb.latest_eng != null ? fmt(fb.latest_eng) : '—', label:'FB Engagements (Last Month)' }},
+    {{ tag:'mc', value: mc.avg_open  ? mc.avg_open  + '%' : '—',         label:'Avg Email Open Rate' }},
+    {{ tag:'mc', value: mc.avg_click ? mc.avg_click + '%' : '—',         label:'Avg Email Click Rate' }},
   ];
   document.getElementById('scorecards').innerHTML = cards.map(c => `
     <div class="scorecard">
-      <div class="platform-tag tag-${{c.tag}}">${{c.tag === 'fb' ? 'Facebook' : 'Instagram'}}</div>
+      <div class="platform-tag tag-${{c.tag}}">${{c.tag === 'fb' ? 'Facebook' : c.tag === 'ig' ? 'Instagram' : 'Email'}}</div>
       <div class="value">${{c.value}}</div>
       <div class="label">${{c.label}}</div>
     </div>
@@ -791,9 +847,57 @@ function igPostCard(p) {{
     </a>`;
 }}
 
+const MC_TEAL   = '#00A99D';
+const MC_TEAL2  = '#00A99D88';
+
+function renderMCCharts() {{
+  const mc = DATA.mc;
+  if (!mc || !mc.labels || !mc.labels.length) {{
+    noDataCard('mcOpenChart',  'No Mailchimp data yet.');
+    noDataCard('mcClickChart', 'No Mailchimp data yet.');
+    return;
+  }}
+
+  barChart('mcOpenChart',  mc.labels, [barDs('Open Rate (%)',  mc.open_rates,  MC_TEAL)]);
+  barChart('mcClickChart', mc.labels, [barDs('Click Rate (%)', mc.click_rates, ORANGE)]);
+
+  const rows = (mc.campaigns || []).map(c => {{
+    const openPct  = (c.open_rate  * 100).toFixed(1);
+    const clickPct = (c.click_rate * 100).toFixed(1);
+    const openBar  = Math.round(c.open_rate  * 120);
+    const clickBar = Math.round(c.click_rate * 120);
+    const date = c.send_time ? new Date(c.send_time).toLocaleDateString('en-US', {{month:'short', day:'numeric', year:'numeric'}}) : '—';
+    return `<tr>
+      <td class="mc-subject">${{c.subject || '(no subject)'}}</td>
+      <td style="color:var(--gray)">${{date}}</td>
+      <td style="text-align:right">${{(c.emails_sent||0).toLocaleString()}}</td>
+      <td>
+        <div class="mc-rate-bar">
+          <div class="mc-bar mc-bar-open" style="width:${{openBar}}px"></div>
+          <span style="font-weight:700;color:#00A99D">${{openPct}}%</span>
+        </div>
+      </td>
+      <td>
+        <div class="mc-rate-bar">
+          <div class="mc-bar mc-bar-click" style="width:${{clickBar}}px"></div>
+          <span style="font-weight:700;color:${{ORANGE}}">${{clickPct}}%</span>
+        </div>
+      </td>
+    </tr>`;
+  }}).join('');
+
+  document.getElementById('mcTable').innerHTML = `
+    <thead><tr>
+      <th>Subject</th><th>Date</th><th style="text-align:right">Sent</th>
+      <th>Open Rate</th><th>Click Rate</th>
+    </tr></thead>
+    <tbody>${{rows}}</tbody>`;
+}}
+
 renderScorecards();
 renderFBCharts();
 renderIGCharts();
+renderMCCharts();
 const fbTopPosts = DATA.fb.top_posts || [];
 document.getElementById('fbPosts').innerHTML = fbTopPosts.length
   ? fbTopPosts.map(fbPostCard).join('')
@@ -891,10 +995,12 @@ def main():
     ig_follower_hist = read_json("ig_follower_history.json")
     ig_insights      = read_json("ig_insights.json")
     ig_media         = read_json("ig_media.json")
+    mc_campaigns     = read_json("mailchimp_campaigns.json")
 
     print("Processing...")
     fb = process_fb(fb_page, fb_fan_history, fb_posts)
     ig = process_ig(ig_account, ig_follower_hist, ig_insights, ig_media)
+    mc = process_mailchimp(mc_campaigns)
 
     print("Fetching IG thumbnails...")
     for post in ig["top_posts"]:
@@ -916,7 +1022,7 @@ def main():
         failed = _status.get("failed", [])
 
     print("Generating HTML...")
-    html = generate_html(fb, ig, logo_uri, generated, failed=failed)
+    html = generate_html(fb, ig, mc, logo_uri, generated, failed=failed)
 
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(html)

@@ -1,11 +1,10 @@
 """
-Load Meta API credentials from 1Password via the `op` CLI.
+Load API credentials from 1Password via the `op` CLI.
 
-Item name:  Meta_PYS   (in the "API keys" vault)
-Fields:     app_id, app_secret, access_token (used by setup_token.py only)
+Meta:      item "Meta_PYS",  fields: app_id, app_secret, access_token
+Mailchimp: item "Mailchimp", field:  mailchimp_api
 
 Requires the 1Password CLI: https://developer.1password.com/docs/cli/get-started/
-Verify it works: op item get "Meta_PYS" --vault "API keys" --field app_id
 """
 
 import os
@@ -29,7 +28,9 @@ def _find_op():
     return None
 
 
-def _op(field):
+def _op(field, item=None):
+    if item is None:
+        item = OP_ITEM
     op_bin = _find_op()
     if not op_bin:
         print("ERROR: 1Password CLI (`op`) not found.")
@@ -37,7 +38,7 @@ def _op(field):
         sys.exit(1)
     try:
         result = subprocess.run(
-            [op_bin, "item", "get", OP_ITEM, "--vault", "API keys", "--field", field, "--reveal"],
+            [op_bin, "item", "get", item, "--vault", "API keys", "--field", field, "--reveal"],
             capture_output=True, text=True, check=True,
         )
         value = result.stdout.strip()
@@ -45,9 +46,9 @@ def _op(field):
             raise ValueError(f"Empty value for field '{field}'")
         return value
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: Could not read '{field}' from 1Password item '{OP_ITEM}'.")
+        print(f"ERROR: Could not read '{field}' from 1Password item '{item}'.")
         print(f"  {e.stderr.strip()}")
-        print(f"  Check: op item get \"{OP_ITEM}\" --vault \"API keys\" --field {field}")
+        print(f"  Check: op item get \"{item}\" --vault \"API keys\" --field {field}")
         sys.exit(1)
 
 
@@ -57,3 +58,6 @@ def get_app_secret():
 def get_access_token():
     """Short-lived token field — used by setup_token.py only."""
     return _op("access_token")
+
+def get_mailchimp_api_key():
+    return _op("mailchimp_api", item="Mailchimp")

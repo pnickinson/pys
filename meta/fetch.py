@@ -20,6 +20,7 @@ warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
 import requests
 
 from config import API_VERSION, DATA_DIR, IG_ACCOUNT_ID, PAGE_ID, TOKEN_FILE
+import creds
 
 BASE = f"https://graph.facebook.com/{API_VERSION}"
 
@@ -207,6 +208,49 @@ def fetch_ig_media(token):
     return media
 
 
+# ── Mailchimp ────────────────────────────────────────────────────────────────
+
+def fetch_mailchimp(count=10):
+    print("Mailchimp: recent campaigns")
+    api_key = creds.get_mailchimp_api_key()
+    dc = api_key.split("-")[-1]
+    base = f"https://{dc}.api.mailchimp.com/3.0"
+
+    r = requests.get(
+        f"{base}/campaigns",
+        params={
+            "status": "sent",
+            "count": count,
+            "sort_field": "send_time",
+            "sort_dir": "DESC",
+            "fields": "campaigns.id,campaigns.settings.subject_line,campaigns.settings.title,campaigns.send_time,campaigns.emails_sent,campaigns.report_summary",
+        },
+        auth=("user", api_key),
+    )
+    data = r.json()
+    if "detail" in data or r.status_code != 200:
+        print(f"  API error: {data.get('detail', r.status_code)}")
+        return None
+
+    campaigns = []
+    for c in data.get("campaigns", []):
+        rs = c.get("report_summary") or {}
+        campaigns.append({
+            "id":            c.get("id", ""),
+            "subject":       c.get("settings", {}).get("subject_line", "(no subject)"),
+            "title":         c.get("settings", {}).get("title", ""),
+            "send_time":     c.get("send_time", ""),
+            "emails_sent":   c.get("emails_sent", 0),
+            "open_rate":     rs.get("open_rate", 0),
+            "unique_opens":  rs.get("unique_opens", 0),
+            "click_rate":    rs.get("click_rate", 0),
+            "unique_clicks": rs.get("unique_clicks", 0),
+        })
+
+    print(f"  Fetched {len(campaigns)} campaigns")
+    return campaigns
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -224,6 +268,10 @@ def main():
     if ig_account  is None: failed.append("Instagram account info")
     if ig_insights is None: failed.append("Instagram insights")
     if ig_media    is None: failed.append("Instagram media")
+
+    # Mailchimp
+    mc_campaigns = fetch_mailchimp(); save("mailchimp_campaigns.json", mc_campaigns)
+    if mc_campaigns is None: failed.append("Mailchimp campaigns")
 
     print("\nDone. Run: python3 dashboard.py")
 
