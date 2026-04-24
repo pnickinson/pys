@@ -664,12 +664,12 @@ function renderScorecards() {{
   const fb = DATA.fb, ig = DATA.ig;
   const mc = DATA.mc || {{}};
   const cards = [
-    {{ tag:'fb', value: fmt(fb.followers),                                label:'Facebook Followers' }},
-    {{ tag:'ig', value: fmt(ig.followers),                                label:'Instagram Followers' }},
-    {{ tag:'ig', value: ig.latest_reach ? fmt(ig.latest_reach) : '—',    label:'IG Reach (Recent Month)' }},
+    {{ tag:'fb', value: fmt(fb.followers),                                 label:'Facebook Followers' }},
     {{ tag:'fb', value: fb.latest_eng != null ? fmt(fb.latest_eng) : '—', label:'FB Engagements (Last Month)' }},
-    {{ tag:'mc', value: mc.avg_open  ? mc.avg_open  + '%' : '—',         label:'Avg Email Open Rate' }},
-    {{ tag:'mc', value: mc.avg_click ? mc.avg_click + '%' : '—',         label:'Avg Email Click Rate' }},
+    {{ tag:'ig', value: fmt(ig.followers),                                 label:'Instagram Followers' }},
+    {{ tag:'ig', value: ig.latest_reach ? fmt(ig.latest_reach) : '—',     label:'IG Reach (Recent Month)' }},
+    {{ tag:'mc', value: mc.avg_open  ? mc.avg_open  + '%' : '—',          label:'Avg Email Open Rate' }},
+    {{ tag:'mc', value: mc.avg_click ? mc.avg_click + '%' : '—',          label:'Avg Email Click Rate' }},
   ];
   document.getElementById('scorecards').innerHTML = cards.map(c => `
     <div class="scorecard">
