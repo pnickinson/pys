@@ -45,6 +45,15 @@ def encode_logo():
     return ""
 
 
+def encode_mc_logo():
+    path = os.path.join(os.path.dirname(LOGO_PATH), "MC 50-50 - Brand Assets 02.png")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+    return ""
+
+
 def fetch_image_b64(url):
     """Download an image and return a base64 data URI, or empty string on failure."""
     if not url:
@@ -292,7 +301,7 @@ def process_mailchimp(campaigns):
 
 # ── HTML generation ───────────────────────────────────────────────────────────
 
-def generate_html(fb, ig, mc, logo_uri, generated, failed=None):
+def generate_html(fb, ig, mc, logo_uri, mc_logo_uri, generated, failed=None):
     data_json = json.dumps({"fb": fb, "ig": ig, "mc": mc}, ensure_ascii=False)
     logo_tag = (f'<img src="{logo_uri}" class="header-logo" alt="PYS">'
                 if logo_uri else
@@ -541,8 +550,7 @@ body {{ font-family: 'Muli', sans-serif; background: var(--bg); color: var(--dar
 
   <!-- Mailchimp -->
   <div class="section-header" style="margin-top:44px;">
-    <div class="platform-icon" style="background:#00A99D;">✉</div>
-    <h2>Email (Mailchimp)</h2>
+    {'<img src="' + mc_logo_uri + '" style="height:32px;" alt="Mailchimp">' if mc_logo_uri else '<h2>Email (Mailchimp)</h2>'}
   </div>
 
   <div class="chart-row">
@@ -861,7 +869,7 @@ function renderMCCharts() {{
   barChart('mcOpenChart',  mc.labels, [barDs('Open Rate (%)',  mc.open_rates,  MC_TEAL)]);
   barChart('mcClickChart', mc.labels, [barDs('Click Rate (%)', mc.click_rates, ORANGE)]);
 
-  const rows = (mc.campaigns || []).map(c => {{
+  const rows = [...(mc.campaigns || [])].reverse().map(c => {{
     const openPct  = (c.open_rate  * 100).toFixed(1);
     const clickPct = (c.click_rate * 100).toFixed(1);
     const openBar  = Math.round(c.open_rate  * 120);
@@ -1011,8 +1019,9 @@ def main():
                 post["media_url"] = b64
             time.sleep(0.1)
 
-    logo_uri  = encode_logo()
-    generated = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+    logo_uri    = encode_logo()
+    mc_logo_uri = encode_mc_logo()
+    generated   = datetime.now().strftime("%B %d, %Y at %I:%M %p")
 
     status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_status.json")
     failed = []
@@ -1022,7 +1031,7 @@ def main():
         failed = _status.get("failed", [])
 
     print("Generating HTML...")
-    html = generate_html(fb, ig, mc, logo_uri, generated, failed=failed)
+    html = generate_html(fb, ig, mc, logo_uri, mc_logo_uri, generated, failed=failed)
 
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(html)
