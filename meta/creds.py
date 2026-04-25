@@ -60,14 +60,16 @@ def get_access_token():
     return _op("access_token")
 
 def get_mailchimp_api_key():
-    """Read Mailchimp API key from 1Password, or fall back to mailchimp_api_key.txt."""
-    key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mailchimp_api_key.txt")
+    """Read Mailchimp API key from 1Password, or fall back to /etc/teamsnap-weather/credentials."""
+    CREDS_FILE = "/etc/teamsnap-weather/credentials"
     op_bin = _find_op()
     if op_bin:
         return _op("mailchimp_api", item="Mailchimp")
-    if os.path.exists(key_file):
-        with open(key_file) as f:
-            return f.read().strip()
-    print("ERROR: 1Password CLI not found and mailchimp_api_key.txt is missing.")
-    print(f"  Create it: echo 'YOUR_KEY' > {key_file}")
-    import sys; sys.exit(1)
+    if os.path.exists(CREDS_FILE):
+        with open(CREDS_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("MAILCHIMP_API_KEY="):
+                    return line.split("=", 1)[1]
+    print("ERROR: 1Password CLI not found and /etc/teamsnap-weather/credentials is missing.")
+    sys.exit(1)
