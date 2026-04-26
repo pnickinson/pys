@@ -924,26 +924,6 @@ def upload_to_gcs(html_path):
 
     storage = get_storage_service()
 
-    try:
-        storage.buckets().insert(
-            project=GCS_PROJECT,
-            predefinedAcl="publicRead",
-            predefinedDefaultObjectAcl="publicRead",
-            body={
-                "name": GCS_BUCKET,
-                "location": "US",
-                "iamConfiguration": {
-                    "uniformBucketLevelAccess": {"enabled": False},
-                },
-            },
-        ).execute()
-        print(f"  Created bucket: {GCS_BUCKET}")
-    except Exception as e:
-        if "409" in str(e) or "conflict" in str(e).lower():
-            pass  # already exists
-        else:
-            raise
-
     media = MediaFileUpload(html_path, mimetype="text/html", resumable=True)
     storage.objects().insert(
         bucket=GCS_BUCKET,
