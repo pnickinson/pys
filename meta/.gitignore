@@ -1,6 +1,8 @@
 page_token.txt
 token.pickle
 client_secret.json
+service_account.json
+mailchimp_api_key.txt
 data/*
 dashboard.html
 run_status.json
