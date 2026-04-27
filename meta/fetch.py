@@ -35,10 +35,28 @@ def load_token():
         return f.read().strip()
 
 
+TIMEOUT = 30
+RETRIES = 3
+
+
+def _get(url, params=None):
+    """requests.get with timeout and retries on network errors."""
+    for attempt in range(RETRIES):
+        try:
+            return requests.get(url, params=params, timeout=TIMEOUT)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt < RETRIES - 1:
+                wait = 5 * (attempt + 1)
+                print(f"  Network error, retrying in {wait}s... ({e})")
+                time.sleep(wait)
+            else:
+                raise
+
+
 def get(path, params, token):
     params = dict(params)
     params["access_token"] = token
-    r = requests.get(f"{BASE}/{path}", params=params)
+    r = _get(f"{BASE}/{path}", params=params)
     data = r.json()
     if "error" in data:
         msg = data["error"].get("message", "unknown error")
@@ -54,7 +72,7 @@ def get_paged(path, params, token, limit=50):
         return None
     results.extend(data.get("data", []))
     while "paging" in data and "next" in data.get("paging", {}) and len(results) < limit:
-        r = requests.get(data["paging"]["next"])
+        r = _get(data["paging"]["next"])
         data = r.json()
         if "error" in data:
             break
