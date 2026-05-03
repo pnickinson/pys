@@ -80,7 +80,7 @@ def detect_post_type(post):
             return "Photo"
         if t in ("video_inline", "video") or mt == "video":
             return "Video"
-        if t == "share":
+        if t in ("share", "native_templates") or mt == "link":
             return "Link"
     if post.get("full_picture"):
         return "Photo"
