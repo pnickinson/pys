@@ -12,7 +12,7 @@ import os
 import sys
 import time
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 warnings.filterwarnings("ignore", message=".*LibreSSL.*")
 warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
@@ -101,7 +101,7 @@ def append_history(filename, record):
     if os.path.exists(path):
         with open(path) as f:
             history = json.load(f)
-    today = record.get("date", datetime.utcnow().strftime("%Y-%m-%d"))
+    today = record.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     history = [h for h in history if h.get("date") != today]
     history.append(record)
     history.sort(key=lambda x: x.get("date", ""))
@@ -119,7 +119,7 @@ def fetch_fb_page(token):
     }, token)
     if page:
         append_history("fb_fan_history.json", {
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "fan_count": page.get("fan_count", 0),
         })
     return page
@@ -136,8 +136,8 @@ def fetch_fb_posts(token):
     )
     posts = get_paged(f"{PAGE_ID}/posts", {
         "fields": fields,
-        "limit": 10,
-    }, token, limit=60)
+        "limit": 3,
+    }, token, limit=30)
 
     if posts is None:
         return None
@@ -164,7 +164,7 @@ def fetch_ig_account(token):
     }, token)
     if account:
         append_history("ig_follower_history.json", {
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "followers_count": account.get("followers_count", 0),
         })
     return account
@@ -172,7 +172,7 @@ def fetch_ig_account(token):
 
 def fetch_ig_insights(token):
     print("Instagram: account insights")
-    until = datetime.utcnow()
+    until = datetime.now(timezone.utc)
     since_30 = until - timedelta(days=30)
 
     result = {"monthly": None}
@@ -296,7 +296,7 @@ def main():
     import json as _json
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _status = {
-        "last_run": datetime.utcnow().isoformat(),
+        "last_run": datetime.now(timezone.utc).isoformat(),
         "success": len(failed) == 0,
         "failed": failed,
         "error": None,
@@ -313,7 +313,7 @@ if __name__ == "__main__":
         import json as _json, traceback as _tb
         _script_dir = os.path.dirname(os.path.abspath(__file__))
         _status = {
-            "last_run": datetime.utcnow().isoformat(),
+            "last_run": datetime.now(timezone.utc).isoformat(),
             "success": False,
             "error": str(_e),
             "details": {},
