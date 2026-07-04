@@ -2,3 +2,7 @@
 .DS_Store
 *.pdf
 Screenshot*
+
+# Local-only data (rosters, emails, PII) - never intended to be tracked
+survey/
+email/
